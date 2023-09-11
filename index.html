@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Speech Ribbons</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <link rel="shortcut icon" href="images/favicon.ico" type="image/x-icon">
+    <link href="css/index.css" rel="stylesheet" />
+    <link href="css/nouislider.css" rel="stylesheet" />
+    <script type="text/javascript" src="glMatrix-0.9.5.min.js"></script>
+    <script type="text/javascript" src="webgl-utils.js"></script>
+    <script type="text/javascript" src="main.js"></script>
+    <script src="./mike.js"></script>
+    <script src="gamepads.js"></script>
+    <script src='nouislider.js'></script>
+
+    <script id="shader-2-fs" type="f">
+        precision highp float;
+uniform vec2 resolution;
+uniform vec2 mouse;
+uniform float time;
+uniform float Param1; // volume
+uniform float Param2; // pitch
+uniform float Param3; // frication
+uniform float Param4;
+
+float mlt = .174533; 
+void main() {
+	float scale=2.5;// - Param1/50.; // 1.5-> .5 is volume
+	
+	vec2 p = (gl_FragCoord.xy / resolution.xy)*scale;
+	//p.y /=2.;
+	float t = time * 0.5;
+	
+	p+=vec2(-scale/2.,-scale/2.);
+	float l = 0.0;
+	for (float i = 1.0; i < 8.0; i++) {
+		p.x += 0.1 / i * cos(i * 8.0 * p.y + t );
+		p.y += 0.1 / i * sin(i * 16.0 * p.x + t*1.3 );
+		l = length(vec2(0, p.y + sin(p.x * mlt * i)));
+		l /= (1.+ Param1/30.);
+	}
+	
+	float g = 1.0 - pow(l, 0.1);
+	float ptch = 3.- Param2/50.;
+	vec3 col = vec3(g/l*0.5,2.*g-l,8.*g*l); // change 2 with pitch 1-3
+    if (Param3 == 1.)
+	    col = vec3((col.x+col.y+col.z)/3.);
+	gl_FragColor = vec4(col, 1.0);
+}
+    
+</script>
+    <script id="shader-3-fs" type="f">
+        precision highp float;
+uniform vec2 resolution;
+uniform vec2 mouse;
+uniform float time;
+uniform float Param1;
+uniform float Param2;
+uniform float Param3;
+uniform float Param4;
+ 
+const float count = 15.0;
+
+float Hash( vec2 p,  float s)
+{
+    vec3 p2 = vec3(p.xy,360.0 * abs(sin(s)));
+    return fract(sin(dot(p2,vec3(27.1,61.7, 12.4)))*273758.5453123);
+}
+
+float noise(vec2 p, float s)
+{
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f *= f * f * (3.0-2.0*f);
+
+    return mix(mix(Hash(i + vec2(0.,0.), s), Hash(i + vec2(1.,0.), s),f.x),
+               mix(Hash(i + vec2(0.,1.), s), Hash(i + vec2(1.,1.), s),f.x),
+               f.y) * s;
+}
+
+float fbm(vec2 p)
+{
+     float v = 0.0;
+     v -= noise(p*.25, 0.35);
+     v += noise(p*.5, 0.25);
+     v -= noise(p*1., 0.25);
+     v += noise(p*2., 0.25);
+     v -= noise(p*4., 0.125);
+     v += noise(p*8., 0.0625);
+     return v;
+}
+
+void main( void ) 
+{
+	float width = 1.+Param1/10.;  // .5-3.1 volume
+
+	vec2 uv = ( gl_FragCoord.yx / resolution.yx ) * 2.0 - 1.0;
+	uv.x +=.2; //.8-Param2/75.; // pitch .75 - .6
+	uv.x /= (width+.3);
+
+	vec3 finalColor = vec3( 0.0 );
+	for( float i=1.; i < count; ++i )
+	{
+		float t = abs(1.0 / ((uv.x + fbm( uv + time/i)) * (i*60.0)));
+		//t *= t * t;
+		finalColor +=  t * vec3( i * 0.1, 0.3, i*0.9 );
+	}
+	
+	finalColor *= 20.0 / count;
+    float tmp = 3.;
+    if (Param3 == 0.)
+        tmp = 8.;
+	if (length(finalColor) < tmp) // 5. or 8. for frication
+		finalColor = vec3(0.);
+	gl_FragColor = vec4( finalColor, 1.0 );
+
+}
+
+</script>
+    <script id="shader-1-fs" type="f">
+        precision highp float;
+uniform vec2 resolution;
+uniform vec2 mouse;
+uniform float time;
+uniform float Param1;
+uniform float Param2;
+uniform float Param3;
+uniform float Param4;
+ 
+const float count = 40.0;
+const float speed = 2.7;
+
+
+float Hash( vec2 p, in float s)
+{
+    vec3 p2 = vec3(p.xy,27.0 * abs(sin(s)));
+    return fract(sin(dot(p2,vec3(27.1,61.7, 12.4)))*273758.5453123);
+}
+
+
+float noise(in vec2 p, in float s)
+{
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f *= f * (3.0-2.0*f);
+    
+    
+    return mix(mix(Hash(i + vec2(0.,0.), s), Hash(i + vec2(1.,0.), s),f.x),
+               mix(Hash(i + vec2(0.,1.), s), Hash(i + vec2(1.,1.), s),f.x),
+               f.y) * s;
+}
+
+
+float fbm(vec2 p)
+{
+    float v = - noise(p * 02., 0.25);
+    v += noise(p * 01.1, 0.5) - noise(p * 01.1, 0.25);
+    v += noise(p * 02.1, 0.25) - noise(p * 02.1, 0.125);
+    v += noise(p * 04.1, 0.125) - noise(p * 08.1, 0.0625);
+    v += noise(p * 08.1, 0.0625) - noise(p * 16., 0.03125);
+    v += noise(p * 16.1, 0.03125);
+    return v;
+}
+
+
+void main( void )
+{
+    float worktime = time * speed + 100000.0;
+    
+    vec2 uv = ( gl_FragCoord.yx / resolution.yx ) * 2.0 - 1.0;
+    uv.x *= resolution.x/resolution.y;
+    uv.x /=1.2 + (Param1/40.); // volume 3. - 1.2
+    uv.x -= .1; //.7-Param2/65.; // pitch -1 -> 1.
+    
+    vec3 finalColor = vec3( 0.0, 0.0, 0.0 );
+    for( float i = 9.8; i < count; i++ )
+    {
+        float t = abs(1.0 / ((uv.x + fbm( uv + worktime / i )) * (i * 100.0)));
+        finalColor +=  t * vec3( i * 0.6, 0.4, 2.1 );
+    }
+    float tmp = .1;
+    if (Param3 == 1.)
+        tmp = .5;
+    if (finalColor.g < tmp)  // frication .1 & .5
+        finalColor = vec3(0.);
+    gl_FragColor = vec4( finalColor, 1.0 );
+    
+    
+}
+
+</script>
+    <script id="shader-4-fs" type="f">
+        precision highp float;
+uniform vec2 resolution;
+uniform vec2 mouse;
+uniform float time;
+uniform float Param1;
+uniform float Param2;
+uniform float Param3;
+uniform float Param4;
+ 
+
+float rand(vec2 co){
+    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+}
+
+float hash( float n ) { return fract(sin(n)*753.5453123); }
+
+// Slight modification of iq's noise function.
+float noise( in vec2 x )
+{
+    vec2 p = floor(x);
+    vec2 f = fract(x);
+    f = f*f*(3.0-2.0*f);
+    
+    float n = p.x + p.y*157.0;
+    return mix(
+                    mix( hash(n+  0.0), hash(n+  1.0),f.x),
+                    mix( hash(n+157.0), hash(n+158.0),f.x),
+            f.y);
+}
+
+
+float fbm(vec2 p, vec3 a)
+{
+     float v = 0.0;
+     v += noise(p*a.x)*.50;
+     v += noise(p*a.y)*.50;
+     v += noise(p*a.z)*.125;
+     return v;
+}
+
+vec3 drawLines( vec2 uv, vec3 fbmOffset,  vec3 color2, vec2 pt1, vec2 pt2 )
+{
+    float timeVal = time * 0.1;
+    vec3 finalColor = vec3( 0.0 );
+    float clrFactor = 0.0;	
+    float tick = 1.0;	
+	//uv.x -=-.5+(Param2/100.); // pitch
+	
+    float r  = distance(uv, pt1) / distance(pt1, pt2);
+    
+    for( int i=0; i < 1; ++i )
+    {
+        float indexAsFloat = float(i);
+        float amp = 2.5 + (indexAsFloat*7.0);
+        float period = 1.0 + (indexAsFloat+8.0);
+        float thickness = mix( 0.0, 0.5, noise(uv*7.0) );  
+	float t = 0.0;    
+	clrFactor = 0.0;
+	vec2 ptc = mix(pt1, pt2, r); // ptc = connection point of Hypothetical circle and line calculated with interpolation
+	float dist = distance(ptc, uv);  // distance betwenn current pixel (uv) and ptc
+	    
+	clrFactor = max((tick - r)/(dist+0.0), 0.0);//+1.2*(uv.x*0.1 + fbm( uv+timeVal * period, fbmOffset )*0.7);
+		    
+	t = 1.0/(r+1.8) + abs( ((clrFactor * thickness) / ( fbm( uv + timeVal * period, fbmOffset ) * amp))  );
+	    
+        finalColor +=  t * color2 * 0.04;
+    }
+    
+    return finalColor;
+}
+
+vec3 hsv2rgb(vec3 c)
+{
+    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+void main( void ) 
+{
+    vec2 uv = ( gl_FragCoord.xy / resolution.xy ) * 2.0 - 1.5;
+    uv.x *= resolution.x/resolution.y;
+    uv.xy = uv.yx;
+	float scale = 3.-(Param1/30.); // volume 1-3
+	uv.x -=.5;
+	uv.x *=scale;
+	uv.x+=scale-.8;
+
+
+    vec3 lineColor1 = vec3( 2.3, 1.5, .5 );
+    vec3 lineColor2 = vec3( 1., 1., 1. );
+    
+    vec3 finalColor = vec3(0.0);
+
+    
+    float t = sin( time *80.) * 0.5 + 0.5;
+    float pulse = mix( 0.90, 1.0, t);
+
+vec2 pt2 = vec2(-0.8,1.24548);
+vec2 pt7 = vec2(-0.8,-4.24344);
+
+int prevj = 0;
+float prevtime;
+vec2 prevff;	
+prevff = pt2;
+
+vec2 ff[19];	
+vec3 ff1[19];	
+vec3 ff2[19];		
+vec3 ff3[19];			
+float r1= 0.0;
+float r2= 0.0;	
+float r3= 0.0;		
+float v= 0.0;		
+float v1= 0.0;			
+float vv;	
+	for (int j = 0; j < 19; j ++ ){
+	   r1 =	rand(vec2(j));
+	   r2 =	rand(vec2(j+1));	
+	   r3 =	0.66 + rand(vec2(j+10)) / 3.0;	
+	   ff1[j].x = r1;
+	   ff1[j].y = r2;		
+	   ff1[j].z = r3;			
+	}
+	for (int j = 0; j < 19; j ++ ){
+	   r1 =	rand(vec2(j+2));
+	   r2 =	rand(vec2(j+3));	
+           r3 = 0.33 + rand(vec2(j+11)) * 2.0 / 3.0;			
+	   ff2[j].x = r1;		
+	   ff2[j].y = r2;
+	   ff2[j].z = r3;	
+	}
+	for (int j = 0; j < 19; j ++ ){
+	   r1 =	rand(vec2(j+4));
+	   r2 =	rand(vec2(j+5));	
+           r3 =	rand(vec2(j+12)) / 3.0;			
+	   ff3[j].x = r1;		
+	   ff3[j].y = r2;
+	   ff3[j].z = r3;	
+	}
+	
+	prevj = 0;
+	for (int j = 0; j < 19; j ++ ){
+	   vv = abs(sin(time*1.0));
+	   v = ff1[j].x;
+  	   v1 = ff1[j].y;   
+		
+	   if (vv > ff3[j].z) {
+		v = ff3[j].x;
+		v1 = ff3[j].y;   
+	   } 
+	   if (vv > ff2[j].z) {
+		v = ff2[j].x; 
+		v1 = ff2[j].y;      
+	   } 
+	   if (vv > ff1[j].z) {
+		v = ff1[j].x; 
+		v1 = ff1[j].y;      
+	   }
+
+	   ff[j].y = pt2.y - v1*0.5 + ((pt7.y-pt2.y)*float(j))/20.0 + sin(sin(2.5+sin(time*0.1)*0.01)*0.1*time*float(j))*0.1;;
+	   ff[j].x = -1.2+v+sin(sin(0.2+sin(time*0.01)*0.2)*0.1*time*float(j))*0.1;
+           finalColor += drawLines( uv, vec3( 1.0, 2.0, 4.0),  lineColor2, prevff, ff[j] );				
+	   prevff = ff[j];	   
+	}
+	finalColor += drawLines( uv, vec3( 1.0, 2.0, 4.0),  lineColor2, ff[18], pt7 );		
+    finalColor = vec3( smoothstep(.03, 1.0,(finalColor.x+finalColor.y+finalColor.z)/3.) )*finalColor*pulse;
+    finalColor *= hsv2rgb(vec3(sin( time *0.3) * 0.5 + 0.5, .7, .7 ));
+    float tmp = .01;
+    if (Param3 == 1.)
+        tmp = .08;
+	if (finalColor.z < tmp)  // frication .01 & .08
+        finalColor = vec3(0.);
+    gl_FragColor = vec4( finalColor *50., 1.);
+
+}
+
+</script>
+    <script id="shader-vs" type="v">
+        attribute vec3 aVertexPosition;attribute vec2 aTextureCoord;uniform mat4 uMVMatrix;uniform mat4 uPMatrix;void main(void){gl_Position=uPMatrix*uMVMatrix*vec4(aVertexPosition,1.);}
+</script>
+</head>
+
+<body>
+    <div id="container">
+        <div id="main">
+            <canvas id="webgl-canvas" style="border: none;" width="1500" height="1000"></canvas>
+            <splash class="btn" enabled></splash>
+            <panel class="img" enabled></panel>
+            <button class="btn" enabled></button>
+            // <button1 class="btn" enabled></button1>
+            // <button2 class="btn" enabled></button2>
+            <button3 class="btn" enabled></button3>
+            <settings class="btn" enabled></settings>
+        </div>
+    </div>
+</body>
+
+</html>
